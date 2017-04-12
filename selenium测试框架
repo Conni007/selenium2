@@ -1,0 +1,232 @@
+（转自：http://www.cnblogs.com/wangcp-2014/p/5545271.html）
+做自动化框架，不可避免的就是对象库。
+
+有一个好的对象库，可以让整个测试体系：
+
+ 更容易维护
+ 大大增加代码重用
+ 增加测试系统的稳定性
+这里先了解一下我所说的对象库：
+
+
+
+所谓的页面对象，是指每一个真是的页面是一个对象。
+
+比如zhihu的登陆页面是一个页面对象，http://www.zhihu.com/#signin
+
+这个页面对象主要包含一个输入邮箱的输入框（一个元素对象），一个输入密码的密码框
+
+一个登陆框。当然，zhihu不止一个页面，有无数页面，每一个页面都可以封装为一个对象。而每个
+
+页面的元素，也可以封装成一个个元素对象。
+
+
+
+为什么要封装成一个个对象？
+
+还是以这个登陆页面为例，如果有一天zhihu改版，登陆界面UI变了，（但是需要输入用户名和密码还有登陆按钮不会消失吧）。
+
+登陆页面的元素的位置也相应改变，如果你的测试用例没有封装过页面和元素， 每个页面都是拿webdriver 直接写，页面元素定位
+
+也分布到测试用例中，这要维护起来要全部改掉测试用例。如果你封装了页面，封装了元素，再封装一个对应的登陆Action，你的每个
+
+测试用例是调用的login.action（）。　　这样，你只需要改变你对象库的内容就完美解决UI变化，而不必一个个修改测试用例。
+
+测试框架目录如下：
+
+  
+
+接下来一这个登陆为例：
+
+首先封装一个BasePage的类，毕竟所有的页面都有共同的东西，每个页面都有元素，每个页面元素都有相应的方法
+
+这里简单封装了几个方法，如type 
+
+
+
+
+接下来封装元素，Webdriver的元素，每个元素都有相应的定位地址（xpath路径或css或id）等待时间和定位类型，默认为By.xpath
+
+
+接下来就是登陆页面的类，这个登陆页面的元素，放在excel统一管理，要获取元素的信息，首先从excel读取。
+
+读取excel的页面元素是使用POI开源框架
+
+
+页面类
+
+复制代码
+复制代码
+package com.dbyl.libarary.pageAction;
+
+import java.io.IOException;
+import java.util.concurrent.TimeUnit;
+
+import org.openqa.selenium.WebDriver;
+
+import com.dbyl.libarary.utils.BasePage;
+import com.dbyl.libarary.utils.Locator;
+
+public class LoginPage extends BasePage {
+
+    WebDriver driver;
+
+    public WebDriver getDriver() {
+        return driver;
+    }
+
+    public LoginPage(WebDriver driver) throws IOException {
+        super(driver);
+        driver.get("http://www.zhihu.com/#signin");
+    }
+
+    Locator loginEmailInputBox = new Locator("loginEmailInputBox");
+
+    Locator loginPasswordInputBox = new Locator("loginPasswordInputBox");
+    Locator loginButton = new Locator("loginButton");
+    Locator profile = new Locator(
+            "profile");
+
+    public void typeEmailInputBox(String email) throws Exception {
+        type(loginEmailInputBox, email);
+    }
+
+    public void typePasswordInputBox(String password) throws Exception {
+        type(loginPasswordInputBox, password);
+    }
+
+    public void clickOnLoginButton() throws Exception {
+        click(loginButton);
+    }
+
+    public boolean isPrestentProfile() throws IOException {
+        return isElementPresent(profile, 20);
+
+    }
+
+    public void waitForPageLoad() {
+        super.getDriver().manage().timeouts()
+                .pageLoadTimeout(30, TimeUnit.SECONDS);
+    }
+
+    
+}
+复制代码
+复制代码
+接下来就是登陆的Action
+
+复制代码
+复制代码
+package com.dbyl.libarary.action;
+
+import org.openqa.selenium.WebDriver;
+import org.testng.Assert;
+
+import com.dbyl.libarary.pageAction.HomePage;
+import com.dbyl.libarary.pageAction.LoginPage;
+
+public class CommonLogin {
+
+    private static WebDriver driver;
+
+    public static WebDriver getDriver() {
+        return driver;
+    }
+
+    static LoginPage loginPage;
+
+    public static HomePage login(String email, String password)
+            throws Exception {
+        loginPage = new LoginPage(getDriver());
+        loginPage.waitForPageLoad();
+        loginPage.typeEmailInputBox(email);
+        loginPage.typePasswordInputBox(password);
+        loginPage.clickOnLoginButton();
+        Assert.assertTrue(loginPage.isPrestentProfile(), "login failed");
+        return new HomePage(getDriver());
+    }
+
+    public static HomePage login() throws Exception {
+        return CommonLogin.login("seleniumcookies@126.com", "cookies123");
+    }
+
+    public static void setDriver(WebDriver driver) {
+        CommonLogin.driver = driver;
+    }
+
+}
+复制代码
+复制代码
+至此为止，已经封装完毕
+
+接下来就能在测试用例直接调用者
+
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+package com.dbyl.tests;
+ 
+import org.openqa.selenium.WebDriver;
+import org.testng.annotations.AfterMethod;
+import org.testng.annotations.BeforeMethod;
+import org.testng.annotations.Test;
+ 
+import com.dbyl.libarary.action.ViewHomePage;
+import com.dbyl.libarary.utils.DriverFactory;
+import com.dbyl.libarary.utils.UITest;
+ 
+public class loginTest extends UITest{
+ 
+ 
+    WebDriver driver=DriverFactory.getChromeDriver();
+    @BeforeMethod(alwaysRun=true)
+    public void init()
+    {
+        super.init(driver);
+        ViewHomePage.setDriver(driver);
+        //CommonLogin.setDriver(driver);
+    }
+    @Test(groups="loginTest")
+    public void loginByUerName() throws Exception
+    {
+        //CommonLogin.login("seleniumcookies@126.com","cookies123");
+        ViewHomePage.viewMyProfile();
+    }
+ 
+    @AfterMethod(alwaysRun=true)
+    public void stop() {
+        super.stop();
+    }         
+}
+demo的下载地址：https://github.com/tobecrazy/Demo
